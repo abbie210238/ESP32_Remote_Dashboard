@@ -1,1 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>ESP32 Remote Dashboard</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #131b2e;
+      --border: #27344d;
+      --text: #eef3ff;
+      --muted: #93a4c3;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --red: #fb7185;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse at top, #192747 0%, var(--bg) 60%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    button, input { font: inherit; }
+
+    button {
+      cursor: pointer;
+      border: 0;
+      border-radius: 12px;
+      padding: 13px 18px;
+      font-weight: 700;
+      transition: .2s;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .container {
+      width: min(1050px, 92%);
+      margin: auto;
+      padding: 30px 0 50px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: #1e3a5f;
+      font-size: 25px;
+    }
+
+    h1 { font-size: 21px; margin: 0; }
+    h2 { font-size: 19px; margin-top: 0; }
+    p { line-height: 1.6; }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    .panel {
+      background: rgba(19, 27, 46, .92);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 12px 35px #0002;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 20px;
+      padding: 7px 12px;
+      background: #273247;
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: #64748b;
+      border-radius: 50%;
+    }
+
+    .online .dot { background: var(--green); }
+    .offline .dot { background: var(--red); }
+
+    .lamp {
+      width: 110px;
+      height: 110px;
+      margin: 20px auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #263248;
+      font-size: 56px;
+      transition: .3s;
+    }
+
+    .lamp.on {
+      background: #fbbf2440;
+      box-shadow: 0 0 45px #fbbf2450;
+    }
+
+    .center { text-align: center; }
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .primary { background: var(--blue); color: #081426; }
+    .secondary { background: #29364d; color: var(--text); }
+    .success { background: #a7f3d0; color: #064e3b; }
+    .danger { background: #4c2534; color: #fecdd3; }
+
+    input {
+      width: 100%;
+      background: #0b1222;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 13px;
+      color: white;
+      margin: 7px 0 14px;
+      outline: none;
+    }
+
+    input:focus { border-color: var(--blue); }
+
+    label { font-size: 13px; color: var(--muted); }
+
+    .metric {
+      background: #0d1527;
+      padding: 16px;
+      border-radius: 13px;
+      margin-top: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 19px;
+      overflow-wrap: anywhere;
+    }
+
+    .notice {
+      border-left: 3px solid var(--blue);
+      padding: 10px 13px;
+      background: #17243a;
+      border-radius: 5px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    #dashboard { display: none; }
+    #loginPanel { max-width: 450px; margin: 35px auto; }
+    #message { min-height: 22px; color: var(--muted); font-size: 13px; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
+
+    @media (max-width: 650px) {
+      .grid { grid-template-columns: 1fr; }
+      .container { padding-top: 20px; }
+      .panel { padding: 19px; }
+      header { align-items: flex-start; }
+      h1 { font-size: 17px; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <div class="logo">⌁</div>
+      <div>
+        <h1>ESP32 Remote Dashboard</h1>
+        <div class="muted">REMOTE DEVICE MANAGEMENT</div>
+      </div>
+    </div>
+    <span id="topStatus" class="status">
+      <span class="dot"></span>
+      尚未登入
+    </span>
+  </header>
+
+  <section id="loginPanel" class="panel">
+    <h2>歡迎回來</h2>
+    <p class="muted">登入後管理 ESP32 裝置與燈光。</p>
+
+    <form id="loginForm">
+      <label for="email">電子郵件</label>
+      <input id="email" type="email" autocomplete="username"
+             placeholder="name@example.com" required>
+
+      <label for="password">密碼</label>
+      <input id="password" type="password"
+             autocomplete="current-password"
+             placeholder="請輸入密碼" required>
+
+      <button class="primary" type="submit" style="width:100%">
+        登入控制面板
+      </button>
+    </form>
+
+    <p id="message">請先完成 Firebase 設定。</p>
+    <div class="notice">
+      此網站使用雲端登入。第一次使用前，請先在 Firebase
+      建立專案並啟用 Email/Password 登入。
+    </div>
+  </section>
+
+  <main id="dashboard">
+    <section class="panel">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <h2>控制中心</h2>
+          <p class="muted">你的 ESP32 裝置狀態</p>
+        </div>
+        <button id="logoutBtn" class="secondary">登出</button>
+      </div>
+
+      <div class="grid">
+        <div class="metric">
+          <span class="muted">裝置連線狀態</span>
+          <strong id="deviceStatus">等待雲端資料</strong>
+        </div>
+        <div class="metric">
+          <span class="muted">目前韌體版本</span>
+          <strong id="currentVersion">--</strong>
+        </div>
+        <div class="metric">
+          <span class="muted">GitHub 最新版本</span>
+          <strong id="latestVersion">--</strong>
+        </div>
+        <div class="metric">
+          <span class="muted">最後回報時間</span>
+          <strong id="lastSeen" style="font-size:15px">--</strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel center">
+        <h2>💡 燈光控制</h2>
+        <span id="lampStatus" class="status">
+          <span class="dot"></span> 狀態未知
+        </span>
+
+        <div id="lamp" class="lamp">💡</div>
+        <p class="muted">ESP32 GPIO 2</p>
+
+        <div class="actions">
+          <button id="turnOn" class="success" disabled>開燈</button>
+          <button id="turnOff" class="danger" disabled>關燈</button>
+        </div>
+        <p id="controlMessage" class="muted">
+          登入並連接雲端後即可控制。
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>🔄 韌體更新</h2>
+        <div class="metric">
+          <span class="muted">更新來源</span>
+          <strong style="font-size:14px">GitHub OTA</strong>
+          <a href="https://github.com/abbie210238/ESP32_MicroPython_OTA"
+             target="_blank" rel="noopener"
+             style="color:#93c5fd;font-size:13px">
+            查看韌體儲存庫 ↗
+          </a>
+        </div>
+        <div class="metric">
+          <span class="muted">更新狀態</span>
+          <strong id="updateStatus" style="font-size:15px">等待資料</strong>
+        </div>
+        <p class="muted">
+          ESP32 會依照裝置端的 OTA 程式檢查 GitHub。
+          網站顯示版本不代表韌體已經成功安裝。
+        </p>
+        <button id="refreshBtn" class="secondary" style="width:100%">
+          重新讀取雲端狀態
+        </button>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>⚙️ 系統資訊</h2>
+      <div class="metric">
+        <span class="muted">裝置 ID</span>
+        <strong style="font-size:15px">esp32-01</strong>
+      </div>
+      <p class="muted">
+        網站：GitHub Pages<br>
+        裝置韌體：MicroPython<br>
+        OTA 版本來源：ESP32_MicroPython_OTA
+      </p>
+      <div class="notice">
+        安全提醒：請勿將 Firebase 管理員私鑰或 Wi-Fi 密碼
+        放入公開網頁。控制指令必須由資料庫安全規則保護。
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    ESP32 Remote Dashboard · GitHub Pages
+  </footer>
+</div>
+
+<script type="module">
+  import { initializeApp } from
+    "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+
+  import {
+    getAuth,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+
+  import {
+    getDatabase,
+    ref,
+    onValue,
+    get,
+    set,
+    update
+  } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
+
+  // 先到 Firebase Console 建立專案，再填入實際設定。
+  const firebaseConfig = {
+    apiKey: "YOUR_FIREBASE_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "YOUR_DATABASE_URL",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_FIREBASE_APP_ID"
+  };
+
+  const $ = id => document.getElementById(id);
+  const message = text => $("message").textContent = text;
+
+  let auth = null;
+  let db = null;
+  let stopDeviceListener = null;
+  let busy = false;
+
+  const configReady =
+    !Object.values(firebaseConfig).some(value =>
+      value.startsWith("YOUR_")
+    ) &&
+    firebaseConfig.databaseURL.startsWith("https://");
+
+  function setTopStatus(text, online = false) {
+    $("topStatus").className =
+      "status " + (online ? "online" : "offline");
+    $("topStatus").lastChild.textContent = " " + text;
+  }
+
+  function renderLamp(on) {
+    $("lamp").classList.toggle("on", on);
+    $("lampStatus").className =
+      "status " + (on ? "online" : "offline");
+    $("lampStatus").lastChild.textContent =
+      on ? " 已開燈" : " 已關燈";
+  }
+
+  function renderDevice(data) {
+    if (!data) {
+      $("deviceStatus").textContent = "尚無裝置資料";
+      setTopStatus("等待 ESP32", false);
+      $("turnOn").disabled = true;
+      $("turnOff").disabled = true;
+      return;
+    }
+
+    // ESP32 應寫入 server timestamp（毫秒）。
+    const seen = Number(data.lastSeen || 0);
+    const online = seen > 0 && Date.now() - seen < 45000;
+
+    $("deviceStatus").textContent =
+      online ? "線上" : "離線或尚未回報";
+
+    setTopStatus(online ? "ESP32 線上" : "ESP32 離線", online);
+
+    $("currentVersion").textContent = data.version || "--";
+    $("latestVersion").textContent = data.latestVersion || "--";
+    $("lastSeen").textContent = seen
+      ? new Date(seen).toLocaleString("zh-TW")
+      : "--";
+
+    $("updateStatus").textContent = data.updateStatus || "等待資料";
+
+    if (typeof data.led === "boolean") {
+      renderLamp(data.led);
+    }
+
+    // 沒有收到近期心跳就不允許下指令。
+    $("turnOn").disabled = !online || busy;
+    $("turnOff").disabled = !online || busy;
+  }
+
+  async function refreshStatus() {
+    if (!db || !auth?.currentUser) return;
+
+    try {
+      const snapshot = await get(ref(db, "devices/esp32-01"));
+      renderDevice(snapshot.val());
+    } catch (error) {
+      $("controlMessage").textContent =
+        "讀取失敗：" + error.message;
+    }
+  }
+
+  async function sendCommand(ledOn) {
+    if (!db || !auth?.currentUser || busy) return;
+
+    busy = true;
+    $("turnOn").disabled = true;
+    $("turnOff").disabled = true;
+    $("controlMessage").textContent = "正在送出控制指令……";
+
+    try {
+      const commandRef = ref(db, "devices/esp32-01/command");
+      const snapshot = await get(commandRef);
+      const old = snapshot.val() || {};
+      const nextId = Number(old.id || 0) + 1;
+
+      await set(commandRef, {
+        id: nextId,
+        led: ledOn,
+        issuedAt: Date.now(),
+        issuedBy: auth.currentUser.uid
+      });
+
+      $("controlMessage").textContent =
+        "指令已送到雲端，等待 ESP32 回報實際燈光狀態。";
+    } catch (error) {
+      $("controlMessage").textContent =
+        "指令失敗：" + error.message;
+    } finally {
+      busy = false;
+      await refreshStatus();
+    }
+  }
+
+  $("loginForm").addEventListener("submit", async event => {
+    event.preventDefault();
+
+    if (!auth) {
+      message("請先設定 Firebase 設定值，再重新整理網站。");
+      return;
+    }
+
+    message("正在登入……");
+
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        $("email").value.trim(),
+        $("password").value
+      );
+      $("password").value = "";
+    } catch (error) {
+      message("登入失敗：" + error.message);
+    }
+  });
+
+  $("logoutBtn").addEventListener("click", async () => {
+    if (auth) await signOut(auth);
+  });
+
+  $("turnOn").addEventListener("click", () => sendCommand(true));
+  $("turnOff").addEventListener("click", () => sendCommand(false));
+  $("refreshBtn").addEventListener("click", refreshStatus);
+
+  if (!configReady) {
+    message("尚未設定 Firebase。請編輯 index.html 中的 firebaseConfig。");
+  } else {
+    try {
+      const app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getDatabase(app);
+
+      onAuthStateChanged(auth, user => {
+        $("loginPanel").style.display = user ? "none" : "block";
+        $("dashboard").style.display = user ? "block" : "none";
+
+        if (!user) {
+          if (stopDeviceListener) stopDeviceListener();
+          stopDeviceListener = null;
+          setTopStatus("尚未登入");
+          message("請使用已建立的帳號登入。");
+          return;
+        }
+
+        message("");
+        stopDeviceListener = onValue(
+          ref(db, "devices/esp32-01"),
+          snapshot => renderDevice(snapshot.val()),
+          error => {
+            $("controlMessage").textContent =
+              "雲端讀取失敗：" + error.message;
+          }
+        );
+      });
+    } catch (error) {
+      message("Firebase 初始化失敗：" + error.message);
+    }
+  }
+</script>
+</body>
+</html>
 
